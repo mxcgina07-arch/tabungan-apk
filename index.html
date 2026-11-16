@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TabunganKu - Online</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{--p:#4A90E2;--bg:#f5f7fb}*{margin:0;padding:0;box-sizing:border-box;font-family:Poppins,system-ui}
+body{background:var(--bg);padding:16px}.card{background:#fff;border-radius:18px;padding:16px;box-shadow:0 6px 20px rgba(0,0,0,.06);margin-bottom:14px}
+.saldo{background:linear-gradient(135deg,#4A90E2,#50E3C2);color:#fff;border-radius:20px;padding:20px}
+.saldo h1{font-size:32px;margin:8px 0}.progress{height:10px;background:rgba(255,255,255,.3);border-radius:10px;overflow:hidden}.progress div{height:100%;background:#fff}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+button{border:0;border-radius:12px;padding:12px;font-weight:700;cursor:pointer;width:100%}
+.btn-p{background:#4A90E2;color:#fff}.btn-s{background:#eef2ff;color:#4A90E2}
+input,select{width:100%;padding:12px;border:1px solid #e5e7eb;border-radius:12px;margin:6px 0 10px}
+table{width:100%;font-size:14px;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #f0f0f0}
+.hidden{display:none}
+</style>
+</head>
+<body>
+
+<div id="loginPage" class="card" style="max-width:400px;margin:50px auto;text-align:center">
+<h2>💰 TabunganKu Online</h2>
+<p style="font-size:12px;color:#888">Login pakai username, data kesimpan di database</p>
+<input id="username" placeholder="Username: misal budi123">
+<button class="btn-p" onclick="masuk()">MASUK</button>
+</div>
+
+<div id="mainPage" class="hidden">
+<div style="display:flex;justify-content:space-between;margin-bottom:10px"><h3>Halo, <span id="namaU"></span></h3><button onclick="keluar()" style="width:auto;background:#fff">Logout</button></div>
+<div class="card saldo"><small>Total Saldo</small><h1 id="totalSaldo">Rp 0</h1><div style="display:flex;justify-content:space-between"><small id="targetText">Target: Belum diatur</small><small id="persen">0%</small></div><div class="progress"><div id="progBar" style="width:0%"></div></div></div>
+<div class="grid2">
+<div class="card"><h4>Tambah</h4><select id="tipe"><option value="masuk">Nabung (+)</option><option value="keluar">Tarik (-)</option></select><input id="jumlah" type="number" placeholder="Jumlah Rp"><select id="kategori"><option>Sekolah</option><option>Jajan</option><option>Umum</option></select><input id="ket" placeholder="Keterangan"><button class="btn-p" onclick="tambah()">Simpan</button></div>
+<div class="card"><h4>Target</h4><input id="targetNama" placeholder="Nama target"><input id="targetNominal" type="number" placeholder="Nominal"><button class="btn-s" onclick="setTarget()">Set Target</button></div>
+</div>
+<div class="card"><h4>Statistik</h4><canvas id="chart"></canvas></div>
+<div class="card"><h4>Riwayat</h4><table><thead><tr><th>Tgl</th><th>Tipe</th><th>Jumlah</th><th></th></tr></thead><tbody id="list"></tbody></table></div>
+</div>
+
+<script>
+// GANTI 2 BARIS INI NANTI DENGAN PUNYA KAMU DARI SUPABASE
+const SUPABASE_URL = 'https://ganti-url.supabase.co';
+const SUPABASE_KEY = 'ganti-anon-key';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let user = localStorage.getItem('user_tab'); let chart;
+function masuk(){let u=username.value.trim().toLowerCase(); if(!u) return alert('Isi username'); localStorage.setItem('user_tab',u); user=u; showApp()}
+function keluar(){localStorage.removeItem('user_tab'); location.reload()}
+function showApp(){if(!user) return; loginPage.classList.add('hidden'); mainPage.classList.remove('hidden'); namaU.textContent=user; loadData()}
+if(user) showApp();
+async function tambah(){let j=+jumlah.value; if(!j) return alert('Isi jumlah'); await supabase.from('tabungan').insert({user_id:user,tipe:tipe.value,jumlah:j,kategori:kategori.value,keterangan:ket.value,tanggal:new Date().toLocaleDateString('id-ID')}); jumlah.value=''; ket.value=''; loadData()}
+async function setTarget(){await supabase.from('target_user').upsert({user_id:user,nama:targetNama.value,nominal:+targetNominal.value}); loadData()}
+async function hapus(id){await supabase.from('tabungan').delete().eq('id',id); loadData()}
+async function loadData(){
+let {data} = await supabase.from('tabungan').select('*').eq('user_id',user).order('id',{ascending:false});
+let {data:t} = await supabase.from('target_user').select('*').eq('user_id',user).maybeSingle();
+let masuk = data.filter(d=>d.tipe=='masuk').reduce((a,b)=>a+b.jumlah,0);
+let keluar = data.filter(d=>d.tipe=='keluar').reduce((a,b)=>a+b.jumlah,0);
+let saldo = masuk-keluar;
+totalSaldo.textContent='Rp '+saldo.toLocaleString('id-ID');
+list.innerHTML=data.map(d=>`<tr><td>${d.tanggal}</td><td>${d.tipe}</td><td>Rp ${d.jumlah.toLocaleString()}</td><td><button onclick="hapus(${d.id})">x</button></td></tr>`).join('') || '<tr><td colspan=4>Belum ada data</td></tr>';
+if(t){targetText.textContent=t.nama+' - Rp '+t.nominal.toLocaleString(); let p=Math.min(100,Math.round(saldo/t.nominal*100)); persen.textContent=p+'%'; progBar.style.width=p+'%'}
+if(chart) chart.destroy(); chart=new Chart(document.getElementById('chart'),{type:'bar',data:{labels:['Masuk','Keluar'],datasets:[{data:[masuk,keluar],backgroundColor:['#4A90E2','#FF6B6B']}]},options:{plugins:{legend:{display:false}}}});
+}
+</script>
+</body>
+</html>
